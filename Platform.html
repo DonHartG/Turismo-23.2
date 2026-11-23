@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Colombia Runner 🇨🇴</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    background: linear-gradient(180deg, #87CEEB 0%, #F9E79F 100%);
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+  }
+  .wrap {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+  }
+  h1 {
+    color: #1a4d8f;
+    text-shadow: 2px 2px 0 #FCD116, 4px 4px 0 #CE1126;
+    font-size: clamp(1.2rem, 5vw, 2rem);
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .subtitle {
+    color: #1a4d8f;
+    font-size: clamp(0.7rem, 3vw, 0.9rem);
+    margin-bottom: 10px;
+    text-align: center;
+  }
+  .game-container {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    aspect-ratio: 2 / 1;
+    border: 4px solid #1a4d8f;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+  }
+  .hud {
+    position: absolute;
+    top: 10px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 15px;
+    color: #1a4d8f;
+    font-weight: bold;
+    font-size: clamp(0.9rem, 3vw, 1.2rem);
+    text-shadow: 1px 1px 0 #fff;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    z-index: 20;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h2 {
+    color: #CE1126;
+    font-size: clamp(1.5rem, 6vw, 2.5rem);
+    margin-bottom: 10px;
+  }
+  .overlay p {
+    color: #1a4d8f;
+    font-size: clamp(0.8rem, 3vw, 1rem);
+    margin-bottom: 6px;
+    line-height: 1.4;
+  }
+  .btn {
+    margin-top: 15px;
+    padding: 12px 28px;
+    background: #FCD116;
+    color: #1a4d8f;
+    border: 3px solid #1a4d8f;
+    border-radius: 6px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: clamp(1rem, 4vw, 1.3rem);
+    cursor: pointer;
+    box-shadow: 0 4px 0 #1a4d8f;
+    transition: transform 0.1s;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #1a4d8f; }
+  .touch-zone {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    cursor: pointer;
+  }
+  .footer {
+    margin-top: 10px;
+    color: #1a4d8f;
+    font-size: 0.75rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🇨🇴 COLOMBIA RUNNER 🌴</h1>
+  <p class="subtitle">Recorre el Valle de Cocora · Esquiva las frutas · Recoge uchuvas</p>
+
+  <div class="game-container">
+    <canvas id="game"></canvas>
+    <div class="hud">
+      <div id="score">Puntos: 0</div>
+      <div id="best">Récord: 0</div>
+    </div>
+    <div class="touch-zone" id="touchZone"></div>
+
+    <div class="overlay" id="startScreen">
+      <h2>¡Bienvenido a Colombia!</h2>
+      <p>🎒 Eres un viajero en el Valle de Cocora</p>
+      <p>⬆️ <b>Espacio / Flecha arriba / Tap</b> para saltar</p>
+      <p>⬇️ <b>Flecha abajo</b> para agacharte (esquiva cóndores)</p>
+      <p>🫐 Recoge uchuvas para sumar puntos</p>
+      <button class="btn" id="startBtn">¡EMPEZAR!</button>
+    </div>
+
+    <div class="overlay hidden" id="gameOverScreen">
+      <h2>¡Se acabó el viaje!</h2>
+      <p id="finalScore">Puntos: 0</p>
+      <p id="tip"></p>
+      <button class="btn" id="restartBtn">Reintentar</button>
+    </div>
+  </div>
+
+  <p class="footer">Hecho con ☕ colombiano · Toca la pantalla o presiona espacio para saltar</p>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const bestEl = document.getElementById('best');
+  const startScreen = document.getElementById('startScreen');
+  const gameOverScreen = document.getElementById('gameOverScreen');
+  const finalScoreEl = document.getElementById('finalScore');
+  const tipEl = document.getElementById('tip');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const touchZone = document.getElementById('touchZone');
+
+  // Resolución interna del canvas (escalada por CSS)
+  const W = 800, H = 400;
+  canvas.width = W;
+  canvas.height = H;
+
+  const GROUND_Y = H - 60;
+  const GRAVITY = 0.7;
+  const JUMP_V = -14;
+  const DOUBLE_JUMP_V = -12;
+
+  const tips = [
+    "💡 Tip: Visita el Valle de Cocora y sus palmas de cera",
+    "💡 Tip: Cartagena de Indias es Patrimonio de la Humanidad",
+    "💡 Tip: Prueba el café de origen en el Eje Cafetero",
+    "💡 Tip: El Caño Cristales es el río de los 5 colores",
+    "💡 Tip: La Catedral de Sal de Zipaquirá es única en el mundo",
+    "💡 Tip: Bogotá está a 2.640m sobre el nivel del mar",
+    "💡 Tip: Colombia tiene la mayor biodiversidad por km² del mundo",
+    "💡 Tip: La Guajira tiene desiertos, playas y cultura wayúu"
+  ];
+
+  let state = 'start'; // start, playing, over
+  let score = 0;
+  let best = +localStorage.getItem('colombiaRunnerBest') || 0;
+  let speed = 6;
+  let frame = 0;
+  let nextObstacle = 0;
+  let nextFruit = 0;
+
+  bestEl.textContent = 'Récord: ' + best;
+
+  // Jugador
+  const player = {
+    x: 80, y: GROUND_Y - 50,
+    w: 36, h: 50,
+    vy: 0,
+    onGround: true,
+    jumps: 0,
+    ducking: false,
+    anim: 0
+  };
+
+  const obstacles = [];
+  const fruits = [];
+  const clouds = [];
+  const mountains = [];
+  const palms = [];
+
+  // Generar fondo estático
+  function initBackground() {
+    clouds.length = 0;
+    mountains.length = 0;
+    palms.length = 0;
+    for (let i = 0; i < 4; i++) {
+      clouds.push({ x: Math.random() * W, y: 40 + Math.random() * 80, s: 0.5 + Math.random() * 0.5 });
+    }
+    for (let i = 0; i < 3; i++) {
+      mountains.push({ x: i * 350, h: 120 + Math.random() * 60 });
+    }
+    for (let i = 0; i < 6; i++) {
+      palms.push({ x: i * 180 + Math.random() * 80, h: 90 + Math.random() * 40 });
+    }
+  }
+  initBackground();
+
+  // Dibujo del jugador (mochilero con sombrero vueltiao)
+  function drawPlayer() {
+    const x = player.x, y = player.y;
+    const duck = player.ducking && player.onGround;
+    const h = duck ? 30 : player.h;
+    const yAdj = duck ? y + 20 : y;
+
+    ctx.save();
+    // Sombra
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x + player.w/2, GROUND_Y + 2, 20, 4, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Piernas (animación)
+    ctx.fillStyle = '#2c3e50';
+    if (player.onGround && !duck) {
+      const legOffset = Math.sin(player.anim * 0.3) * 4;
+      ctx.fillRect(x + 8, yAdj + h - 14, 8, 14);
+      ctx.fillRect(x + 20, yAdj + h - 14 + legOffset, 8, 14 - legOffset);
+    } else if (duck) {
+      ctx.fillRect(x + 6, yAdj + h - 8, 10, 8);
+      ctx.fillRect(x + 20, yAdj + h - 8, 10, 8);
+    } else {
+      ctx.fillRect(x + 8, yAdj + h - 14, 8, 14);
+      ctx.fillRect(x + 20, yAdj + h - 14, 8, 14);
+    }
+
+    // Cuerpo (camisa amarilla - bandera)
+    ctx.fillStyle = '#FCD116';
+    ctx.fillRect(x + 6, yAdj + 18, 24, duck ? 14 : 22);
+    // Detalle rojo
+    ctx.fillStyle = '#CE1126';
+    ctx.fillRect(x + 6, yAdj + (duck ? 28 : 36), 24, 4);
+
+    // Mochila
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(x - 2, yAdj + 20, 8, 16);
+    ctx.fillStyle = '#654321';
+    ctx.fillRect(x - 2, yAdj + 20, 8, 3);
+
+    // Cabeza
+    ctx.fillStyle = '#e8b88a';
+    ctx.fillRect(x + 10, yAdj + 8, 16, 12);
+    // Ojo
+    ctx.fillStyle = '#000';
+    ctx.fillRect(x + 20, yAdj + 12, 3, 3);
+
+    // Sombrero vueltiao (blanco y negro en espiral)
+    ctx.fillStyle = '#f5e9c9';
+    ctx.fillRect(x + 4, yAdj + 2, 28, 4);
+    ctx.fillRect(x + 8, yAdj - 2, 20, 4);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(x + 6, yAdj + 4, 4, 2);
+    ctx.fillRect(x + 14, yAdj + 4, 4, 2);
+    ctx.fillRect(x + 22, yAdj + 4, 4, 2);
+    ctx.fillRect(x + 10, yAdj, 4, 2);
+    ctx.fillRect(x + 18, yAdj, 4, 2);
+
+    ctx.restore();
+  }
+
+  // Obstáculos: frutas tropicales (piña, sandía, arepa)
+  function drawObstacle(o) {
+    ctx.save();
+    if (o.type === 'uchuva-big') {
+      // Uchuva grande
+      ctx.fillStyle = '#FF8C00';
+      ctx.beginPath();
+      ctx.arc(o.x + o.w/2, o.y + o.h/2, o.w/2, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#6B8E23';
+      ctx.fillRect(o.x + o.w/2 - 2, o.y - 4, 4, 6);
+    } else if (o.type === 'cactus') {
+      // Palma pequeña / arbusto cafetero
+      ctx.fillStyle = '#2d5016';
+      ctx.fillRect(o.x + o.w/2 - 4, o.y + 10, 8, o.h - 10);
+      ctx.fillRect(o.x, o.y + 15, o.w, 10);
+      ctx.fillRect(o.x + 4, o.y, o.w - 8, 20);
+    } else if (o.type === 'condor') {
+      // Cóndor volando
+      const flap = Math.sin(frame * 0.2) * 6;
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(o.x + 10, o.y + 10, 20, 10);
+      // Alas
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y + 15);
+      ctx.lineTo(o.x + 15, o.y + 10 + flap);
+      ctx.lineTo(o.x + 15, o.y + 20);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(o.x + 40, o.y + 15);
+      ctx.lineTo(o.x + 25, o.y + 10 + flap);
+      ctx.lineTo(o.x + 25, o.y + 20);
+      ctx.closePath();
+      ctx.fill();
+      // Cabeza blanca
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(o.x + 28, o.y + 8, 8, 8);
+      ctx.fillStyle = '#CE1126';
+      ctx.fillRect(o.x + 34, o.y + 10, 4, 3);
+    } else if (o.type === 'rock') {
+      // Roca de la Peñola
+      ctx.fillStyle = '#6b6b6b';
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y + o.h);
+      ctx.lineTo(o.x + 5, o.y + 8);
+      ctx.lineTo(o.x + o.w - 5, o.y);
+      ctx.lineTo(o.x + o.w, o.y + o.h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#4a4a4a';
+      ctx.fillRect(o.x + 10, o.y + 15, 3, 3);
+      ctx.fillRect(o.x + 25, o.y + 20, 2, 2);
+    }
+    ctx.restore();
+  }
+
+  function drawFruit(f) {
+    ctx.save();
+    // Uchuva dorada brillante
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath();
+    ctx.arc(f.x + f.w/2, f.y + f.h/2, f.w/2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#FFA500';
+    ctx.beginPath();
+    ctx.arc(f.x + f.w/2 - 2, f.y + f.h/2 - 2, f.w/4, 0, Math.PI*2);
+    ctx.fill();
+    // Hojita
+    ctx.fillStyle = '#228B22';
+    ctx.fillRect(f.x + f.w/2 - 1, f.y - 3, 2, 4);
+    // Brillo
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.beginPath();
+    ctx.arc(f.x + f.w/2 - 3, f.y + f.h/2 - 4, 2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBackground() {
+    // Cielo degradado
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#87CEEB');
+    grad.addColorStop(0.7, '#B0E0E6');
+    grad.addColorStop(1, '#F9E79F');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Sol
+    ctx.fillStyle = '#FCD116';
+    ctx.beginPath();
+    ctx.arc(W - 80, 70, 30, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(252, 209, 22, 0.3)';
+    ctx.beginPath();
+    ctx.arc(W - 80, 70, 40, 0, Math.PI*2);
+    ctx.fill();
+
+    // Nubes
+    clouds.forEach(c => {
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 18 * c.s, 0, Math.PI*2);
+      ctx.arc(c.x + 18 * c.s, c.y + 4, 14 * c.s, 0, Math.PI*2);
+      ctx.arc(c.x - 16 * c.s, c.y + 4, 12 * c.s, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // Montañas lejanas (Eje Cafetero)
+    mountains.forEach(m => {
+      ctx.fillStyle = '#3a6b3a';
+      ctx.beginPath();
+      ctx.moveTo(m.x, GROUND_Y);
+      ctx.lineTo(m.x + 150, GROUND_Y - m.h);
+      ctx.lineTo(m.x + 300, GROUND_Y);
+      ctx.closePath();
+      ctx.fill();
+      // Nieve en la cima
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(m.x + 130, GROUND_Y - m.h + 20);
+      ctx.lineTo(m.x + 150, GROUND_Y - m.h);
+      ctx.lineTo(m.x + 170, GROUND_Y - m.h + 20);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    // Palmeras de cera (Valle de Cocora)
+    palms.forEach(p => {
+      // Tronco
+      ctx.fillStyle = '#8B7355';
+      ctx.fillRect(p.x + 8, GROUND_Y - p.h, 6, p.h);
+      // Copa de palmera
+      ctx.fillStyle = '#2d5016';
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2;
+        ctx.save();
+        ctx.translate(p.x + 11, GROUND_Y - p.h);
+        ctx.rotate(angle);
+        ctx.fillRect(-2, 0, 4, 25);
+        ctx.restore();
+      }
+      ctx.fillStyle = '#3a6b3a';
+      ctx.beginPath();
+      ctx.arc(p.x + 11, GROUND_Y - p.h, 10, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // Suelo (tierra cafetera)
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+    ctx.fillStyle = '#654321';
+    ctx.fillRect(0, GROUND_Y, W, 4);
+    // Detalle de granos de café
+    ctx.fillStyle = '#3d2817';
+    for (let i = 0; i < 20; i++) {
+      const px = (i * 47 + frame * speed * 0.5) % W;
+      ctx.fillRect(px, GROUND_Y + 15 + (i % 3) * 10, 3, 2);
+    }
+  }
+
+  function updateBackground() {
+    clouds.forEach(c => {
+      c.x -= 0.5 * c.s;
+      if (c.x < -50) c.x = W + 50;
+    });
+    mountains.forEach(m => {
+      m.x -= speed * 0.2;
+      if (m.x < -300) m.x = W + 50;
+    });
+    palms.forEach(p => {
+      p.x -= speed * 0.6;
+      if (p.x < -30) p.x = W + 30 + Math.random() * 100;
+    });
+  }
+
+  function spawnObstacle() {
+    const types = ['uchuva-big', 'cactus', 'rock'];
+    if (score > 300) types.push('condor');
+    const type = types[Math.floor(Math.random() * types.length)];
+    let o;
+    if (type === 'uchuva-big') {
+      o = { type, x: W, y: GROUND_Y - 30, w: 30, h: 30 };
+    } else if (type === 'cactus') {
+      const h = 35 + Math.random() * 25;
+      o = { type, x: W, y: GROUND_Y - h, w: 30, h };
+    } else if (type === 'rock') {
+      o = { type, x: W, y: GROUND_Y - 35, w: 40, h: 35 };
+    } else if (type === 'condor') {
+      o = { type, x: W, y: GROUND_Y - 70, w: 40, h: 30 };
+    }
+    obstacles.push(o);
+    nextObstacle = frame + 60 + Math.random() * 60;
+  }
+
+  function spawnFruit() {
+    const y = GROUND_Y - 60 - Math.random() * 60;
+    fruits.push({ x: W, y, w: 18, h: 18 });
+    nextFruit = frame + 80 + Math.random() * 100;
+  }
+
+  function collide(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  function jump() {
+    if (state !== 'playing') return;
+    if (player.jumps < 2) {
+      player.vy = player.jumps === 0 ? JUMP_V : DOUBLE_JUMP_V;
+      player.onGround = false;
+      player.jumps++;
+      player.ducking = false;
+    }
+  }
+
+  function duck(on) {
+    if (state !== 'playing') return;
+    player.ducking = on && player.onGround;
+    if (on && !player.onGround) player.vy += 1.5; // caída rápida
+  }
+
+  function reset() {
+    player.x = 80;
+    player.y = GROUND_Y - 50;
+    player.vy = 0;
+    player.onGround = true;
+    player.jumps = 0;
+    player.ducking = false;
+    obstacles.length = 0;
+    fruits.length = 0;
+    score = 0;
+    speed = 6;
+    frame = 0;
+    nextObstacle = 60;
+    nextFruit = 100;
+    initBackground();
+  }
+
+  function startGame() {
+    reset();
+    state = 'playing';
+    startScreen.classList.add('hidden');
+    gameOverScreen.classList.add('hidden');
+  }
+
+  function gameOver() {
+    state = 'over';
+    if (score > best) {
+      best = score;
+      localStorage.setItem('colombiaRunnerBest', best);
+      bestEl.textContent = 'Récord: ' + best;
+    }
+    finalScoreEl.textContent = 'Puntos: ' + score;
+    tipEl.textContent = tips[Math.floor(Math.random() * tips.length)];
+    gameOverScreen.classList.remove('hidden');
+  }
+
+  function update() {
+    if (state !== 'playing') return;
+    frame++;
+    player.anim++;
+
+    // Física del jugador
+    player.vy += GRAVITY;
+    player.y += player.vy;
+    const groundLevel = GROUND_Y - player.h;
+    if (player.y >= groundLevel) {
+      player.y = groundLevel;
+      player.vy = 0;
+      player.onGround = true;
+      player.jumps = 0;
+    } else {
+      player.onGround = false;
+    }
+
+    // Hitbox ajustada para el jugador
+    const duckH = player.ducking && player.onGround;
+    const ph = duckH ? 30 : player.h;
+    const py = duckH ? player.y + 20 : player.y;
+    const playerBox = { x: player.x + 4, y: py + 4, w: player.w - 8, h: ph - 8 };
+
+    // Spawn obstáculos
+    if (frame >= nextObstacle) spawnObstacle();
+    if (frame >= nextFruit) spawnFruit();
+
+    // Mover obstáculos
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      const o = obstacles[i];
+      o.x -= speed;
+      if (o.x + o.w < 0) {
+        obstacles.splice(i, 1);
+        continue;
+      }
+      if (collide(playerBox, o)) {
+        gameOver();
+        return;
+      }
+    }
+
+    // Mover frutas
+    for (let i = fruits.length - 1; i >= 0; i--) {
+      const f = fruits[i];
+      f.x -= speed;
+      if (f.x + f.w < 0) {
+        fruits.splice(i, 1);
+        continue;
+      }
+      if (collide(playerBox, f)) {
+        fruits.splice(i, 1);
+        score += 25;
+      }
+    }
+
+    // Puntos por distancia
+    if (frame % 5 === 0) score++;
+
+    // Aumentar velocidad progresivamente
+    if (frame % 300 === 0 && speed < 14) speed += 0.5;
+
+    updateBackground();
+    scoreEl.textContent = 'Puntos: ' + score;
+  }
+
+  function draw() {
+    drawBackground();
+    fruits.forEach(drawFruit);
+    obstacles.forEach(drawObstacle);
+    drawPlayer();
+
+    // Efecto de game over
+    if (state === 'over') {
+      ctx.fillStyle = 'rgba(206, 17, 38, 0.3)';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // Controles
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') {
+      e.preventDefault();
+      if (state === 'start') startGame();
+      else if (state === 'over') startGame();
+      else jump();
+    } else if (e.code === 'ArrowDown') {
+      e.preventDefault();
+      duck(true);
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'ArrowDown') duck(false);
+  });
+
+  // Táctil
+  touchZone.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (state === 'start') startGame();
+    else if (state === 'over') startGame();
+    else jump();
+  }, { passive: false });
+  touchZone.addEventListener('mousedown', e => {
+    if (state === 'start' || state === 'over') return; // botones manejan esto
+    jump();
+  });
+
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+
+  // Prevenir scroll en móvil
+  document.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+
+  loop();
+})();
+</script>
+</body>
+</html>
